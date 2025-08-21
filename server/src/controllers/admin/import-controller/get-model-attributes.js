@@ -1,4 +1,4 @@
-import { getModelAttributes } from '../../../utils/models.js';
+import { getModelAttributes, getModel } from '../../../utils/models.js';
 
 const getModelAttributesEndpoint = async (ctx) => {
   const { slug } = ctx.params;
@@ -9,9 +9,19 @@ const getModelAttributesEndpoint = async (ctx) => {
 
   attributeNames.unshift('id');
 
+  // Get the model configuration to check for configured idField
+  const model = getModel(slug);
+  let idField = 'id'; // Default value
+  
+  // Check if the model has import-export plugin options configured
+  if (model?.pluginOptions?.['strapi-import-export']?.idField) {
+    idField = model.pluginOptions['strapi-import-export'].idField;
+  }
+
   ctx.body = {
     data: {
       attribute_names: attributeNames,
+      idField: idField,
     },
   };
 };

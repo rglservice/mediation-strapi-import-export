@@ -25,16 +25,33 @@ import { parseInputData } from './parsers.js';
  * @param {Object} options.idField - Field used as unique identifier.
  * @returns {Promise<ImportDataRes>}
  */
-const importData = async (dataRaw, { slug, format, user, idField }) => {
-  let data = await parseInputData(format, dataRaw, { slug });
+const importData = async (dataRaw, { slug, format, user, idField, importAsDrafts = true }) => {
+  // Check if the model has draftAndPublish enabled
+  const model = getModel(slug);
+  const hasDraftAndPublish = model?.options?.draftAndPublish === true;
+  
+  strapi.log.info(`Model ${slug} - draftAndPublish: ${hasDraftAndPublish}, importAsDrafts: ${importAsDrafts}`);
+  
+  let data;
+  
+  // If format is 'jso', the data is already parsed
+  if (format === 'jso') {
+    data = dataRaw;
+  } else {
+    // Only apply importAsDrafts if the model supports draft & publish
+    const shouldApplyDraftMode = hasDraftAndPublish ? importAsDrafts : false;
+    data = await parseInputData(format, dataRaw, { slug, importAsDrafts: shouldApplyDraftMode });
+  }
+  
   data = toArray(data);
 
-  console.log('importDatas', slug, format, user, idField);
+  // Log import action without data content to prevent console flooding
+  strapi.log.info(`Importing ${format} data for ${slug} - ${data.length} items to process`);
   let res;
   if (slug === CustomSlugs.MEDIA) {
     res = await importMedia(data, { user });
   } else {
-    res = await importOtherSlug(data, { slug, user, idField });
+    res = await importOtherSlug(data, { slug, user, idField, hasDraftAndPublish, importAsDrafts });
   }
 
   return res;
@@ -61,21 +78,35 @@ const importMedia = async (fileData, { user }) => {
   };
 };
 
-const importOtherSlug = async (data, { slug, user, idField }) => {
+const importOtherSlug = async (data, { slug, user, idField, hasDraftAndPublish, importAsDrafts }) => {
   const processed = [];
-  for (let datum of data) {
+  strapi.log.info(`Processing ${data.length} items for ${slug} using idField: ${idField}, draftAndPublish: ${hasDraftAndPublish}, importAsDrafts: ${importAsDrafts}`);
+  
+  for (let i = 0; i < data.length; i++) {
+    const datum = data[i];
     let res;
     try {
+      strapi.log.info(`Processing item ${i + 1}/${data.length}: ${datum[idField] || datum.name || datum.id || 'unknown'}`);
+      
+      // If the entity doesn't support draft & publish, remove publishedAt field
+      if (!hasDraftAndPublish && datum.publishedAt !== undefined) {
+        delete datum.publishedAt;
+        strapi.log.info(`Removed publishedAt field for non-draft entity`);
+      }
+      
       await updateOrCreate(user, slug, datum, idField);
       res = { success: true };
+      strapi.log.info(`Successfully processed item ${i + 1}/${data.length}`);
     } catch (err) {
-      strapi.log.error(err);
+      strapi.log.error(`Error processing item ${i + 1}/${data.length}:`, err);
       res = { success: false, error: err.message, args: [datum] };
     }
     processed.push(res);
   }
 
   const failures = processed.filter((p) => !p.success).map((f) => ({ error: f.error, data: f.args[0] }));
+  
+  strapi.log.info(`Import complete: ${processed.length - failures.length} succeeded, ${failures.length} failed`);
 
   return {
     failures,
@@ -112,6 +143,8 @@ const updateOrCreateCollectionType = async (user, slug, data, idField) => {
     whereBuilder.extend({ [idField]: data[idField] });
   }
   const where = whereBuilder.get();
+  
+  strapi.log.info(`updateOrCreateCollectionType - idField: ${idField}, where: ${JSON.stringify(where)}, data[idField]: ${data[idField]}`);
 
   // Prevent strapi from throwing a unique constraint error on id field.
   if (idField !== 'id') {
@@ -120,11 +153,19 @@ const updateOrCreateCollectionType = async (user, slug, data, idField) => {
 
   let entry;
   if (!where[idField]) {
+    strapi.log.info(`No ${idField} field found, creating new entry`);
     entry = await strapi.db.query(slug).create({ data });
   } else {
-    entry = await strapi.db.query(slug).update({ where, data });
-
-    if (!entry) {
+    strapi.log.info(`Attempting to update where ${idField} = ${where[idField]}`);
+    
+    // First try to find the existing entry
+    const existingEntry = await strapi.db.query(slug).findOne({ where });
+    
+    if (existingEntry) {
+      strapi.log.info(`Found existing entry with id ${existingEntry.id}, updating...`);
+      entry = await strapi.db.query(slug).update({ where: { id: existingEntry.id }, data });
+    } else {
+      strapi.log.info(`No existing entry found, creating new...`);
       entry = await strapi.db.query(slug).create({ data });
     }
   }

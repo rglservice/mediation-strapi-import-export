@@ -44,7 +44,7 @@ const HomePage = () => {
                   <Flex direction="column" alignItems="start" gap={4}>
                     <Flex gap={4}>
                       <ImportModal />
-                      <ExportModal availableExportFormats={[dataFormats.JSON_V2]}/>
+                      <ExportModal availableExportFormats={[dataFormats.CSV, dataFormats.JSON_V2, dataFormats.JSON]}/>
                       {/* <ExportButton availableExportFormats={[dataFormats.JSON_V2]} /> */}
                     </Flex>
                   </Flex>

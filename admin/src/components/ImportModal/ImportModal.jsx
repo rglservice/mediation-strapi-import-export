@@ -1,4 +1,4 @@
-import { Modal, Button, Typography, Flex, Box, Loader } from '@strapi/design-system';
+import { Modal, Button, Typography, Flex, Box, Loader, Field, SingleSelect, SingleSelectOption } from '@strapi/design-system';
 import { CheckCircle, Code as IconCode, File as IconFile, Upload } from '@strapi/icons';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -93,10 +93,12 @@ export const ImportModal = ({ onClose }) => {
   const [data, setData] = useState('');
   const [options, setOptions] = useState({});
   const [dataFormat, setDataFormat] = useState(dataFormats.CSV);
+  const [fileType, setFileType] = useState('strapi'); // 'strapi', 'postgres', 'csv'
   const [labelClassNames, setLabelClassNames] = useState('plugin-ie-import_modal_input-label');
   const [uploadSuccessful, setUploadSuccessful] = useState(ModalState.UNSET);
   const [uploadingData, setUploadingData] = useState(false);
   const [importFailuresContent, setImportFailuresContent] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
 
   const onDataChanged = (data) => {
     setData(data);
@@ -115,8 +117,11 @@ export const ImportModal = ({ onClose }) => {
   const readFile = (file) => {
     if (file.type === 'text/csv' || /\.csv$/i.test(file.name)) {
       setDataFormat(dataFormats.CSV);
+      setFileType('csv');
     } else if (file.type === 'application/json' || /\.json$/i.test(file.name)) {
       setDataFormat(dataFormats.JSON);
+      // Keep the current fileType selection for JSON files (could be 'strapi' or 'postgres')
+      // User can change it after loading if needed
     } else {
       throw new Error(`File type ${file.type} not supported.`);
     }
@@ -148,21 +153,29 @@ export const ImportModal = ({ onClose }) => {
       const { post } = fetchClient;
       const res = await post(`/${PLUGIN_ID}/import`, {
         // body: JSON.stringify({ slug, data, format: dataFormat, ...options }),
-        data:{ slug, data, format: dataFormat, ...options },
+        data:{ slug, data, format: dataFormat, fileType, ...options },
         // headers: {
         //   'Content-Type': 'application/json',
         // },
       });
 
-      const { failures } = res;
-      if (!failures.length) {
+      // Handle both res.data and direct res response formats
+      const responseData = res.data || res;
+      const failures = responseData.failures || [];
+      
+      if (!failures || failures.length === 0) {
         setUploadSuccessful(ModalState.SUCCESS);
         notify(
           i18n('plugin.message.import.success.imported.title'),
           i18n('plugin.message.import.success.imported.message'),
           'success'
         );
-        refreshView();
+        // Close modal after a short delay to show success message
+        setTimeout(() => {
+          setIsOpen(false);
+          resetModal();
+          refreshView();
+        }, 1500);
       } else {
         setUploadSuccessful(ModalState.PARTIAL);
         setImportFailuresContent(JSON.stringify(failures, null, '\t'));
@@ -173,7 +186,6 @@ export const ImportModal = ({ onClose }) => {
         );
       }
     } catch (err) {
-      console.log('err', err);
       handleRequestErr(err, {
         403: () =>
           notify(
@@ -200,8 +212,16 @@ export const ImportModal = ({ onClose }) => {
   };
 
   const refreshView = () => {
-    navigate('/tmp');
-    navigate(-1);
+    // Force refresh the current page to show new data
+    window.location.reload();
+  };
+  
+  const resetModal = () => {
+    setData('');
+    setDataFormat(dataFormats.CSV);
+    setFile({});
+    setUploadSuccessful(ModalState.UNSET);
+    setImportFailuresContent('');
   };
 
   const handleDragOver = (e) => {
@@ -245,11 +265,19 @@ export const ImportModal = ({ onClose }) => {
   const showImportButton = showEditor;
   const showRemoveFileButton = showEditor;
 
+  const handleOpenChange = (open) => {
+    setIsOpen(open);
+    if (!open) {
+      resetModal();
+    }
+  };
+
   return (
-    <Modal.Root onClose={onClose}>
+    <Modal.Root onOpenChange={handleOpenChange}>
       <Modal.Trigger>
         <Button startIcon={<Upload />}>{formatMessage({ id: getTrad('plugin.cta.import') })}</Button>
       </Modal.Trigger>
+      {isOpen && (
       <Modal.Content>
         <Modal.Header>
           <Modal.Title>
@@ -266,6 +294,17 @@ export const ImportModal = ({ onClose }) => {
                 {i18n('plugin.import.data-source-step.title')}
               </Typography>
             </div>
+            <Box paddingBottom={4}>
+              <Field.Root>
+                <Field.Label>File Type</Field.Label>
+                <Field.Hint>Select the type of file you want to import</Field.Hint>
+                <SingleSelect value={fileType} onChange={setFileType}>
+                  <SingleSelectOption value="strapi">JSON (Strapi v2 format)</SingleSelectOption>
+                  <SingleSelectOption value="postgres">JSON (PostgreSQL export - mediations.json)</SingleSelectOption>
+                  <SingleSelectOption value="csv">CSV</SingleSelectOption>
+                </SingleSelect>
+              </Field.Root>
+            </Box>
               <Flex gap={4}>
                 <DragOverLabel
                   className={`plugin-ie-import_modal_label ${labelClassNames}`}
@@ -300,7 +339,7 @@ export const ImportModal = ({ onClose }) => {
               </Flex>
             </>
           )}
-          {showEditor && <ImportEditor file={file} data={data} dataFormat={dataFormat} slug={slug} onDataChanged={onDataChanged} onOptionsChanged={onOptionsChanged} />}
+          {showEditor && <ImportEditor file={file} data={data} dataFormat={dataFormat} fileType={fileType} slug={slug} onDataChanged={onDataChanged} onOptionsChanged={onOptionsChanged} />}
           {showSuccess && (
             <Flex direction="column" alignItems="center" gap={4}>
               <Box paddingBottom={4}>
@@ -310,7 +349,7 @@ export const ImportModal = ({ onClose }) => {
                 {i18n('plugin.message.import.success.imported-successfully')}
               </Typography>
               <Box paddingTop={4}>
-                <Button onClick={onClose} variant="tertiary">
+                <Button onClick={() => setIsOpen(false)} variant="tertiary">
                   {i18n('plugin.cta.close')}
                 </Button>
               </Box>
@@ -342,6 +381,7 @@ export const ImportModal = ({ onClose }) => {
           )}
         </Modal.Footer>
       </Modal.Content>
+      )}
     </Modal.Root>
   );
 };

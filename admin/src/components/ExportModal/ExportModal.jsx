@@ -40,7 +40,6 @@ export const ExportModal = ({ availableExportFormats = [dataFormats.CSV, dataFor
   const [isOpen, setIsOpen] = useState(false);
 
   const handleSetOption = (optionName) => (value) => {
-    console.log('handleSetOption', optionName, value);
     setOptions((previous) => ({ ...previous, [optionName]: value }));
   };
 
@@ -49,7 +48,6 @@ export const ExportModal = ({ availableExportFormats = [dataFormats.CSV, dataFor
   const getData = async () => {
     setFetchingData(true);
     try {
-      console.log('fetching data');
       const res = await post(`/${PLUGIN_ID}/export/contentTypes`, {
         data:{
           slug,
@@ -63,7 +61,6 @@ export const ExportModal = ({ availableExportFormats = [dataFormats.CSV, dataFor
       });
       setData(res.data);
     } catch (err) {
-      console.log('err', err);
       handleRequestErr(err, {
         403: () => notify(i18n('plugin.message.export.error.forbidden.title'), i18n('plugin.message.export.error.forbidden.message'), 'danger'),
         default: () => notify(i18n('plugin.message.export.error.unexpected.title'), i18n('plugin.message.export.error.unexpected.message'), 'danger'),
@@ -155,7 +152,7 @@ export const ExportModal = ({ availableExportFormats = [dataFormats.CSV, dataFor
                         required
                         placeholder={i18n('plugin.export.export-format')}
                         value={options.exportFormat}
-                        onChange={()=>handleSetOption('exportFormat')}
+                        onChange={handleSetOption('exportFormat')}
                       >
                         {availableExportFormats.map((format) => (
                           <SingleSelectOption key={format} value={format}>

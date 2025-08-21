@@ -8,7 +8,6 @@ export const Editor = ({ content = '', language = 'csv', readOnly = false, onCha
   const [codeMirrorContent, setCodeMirrorContent] = useState('');
 
   useEffect(() => {
-    console.log('content', content);
     if (typeof content === 'object') {
       setCodeMirrorContent(content.data);
     }else{
